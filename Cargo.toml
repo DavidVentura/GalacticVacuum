@@ -9,6 +9,8 @@ edition = "2021"
 alsa = "0.7.0"
 hound = "3.5.0"
 itertools = "0.10.5"
+symphonia = "0.5.3"
+symphonia-core = "0.5.3"
 
 [profile.dev]
 strip = "symbols"
