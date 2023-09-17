@@ -1,8 +1,8 @@
-use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
 use alsa::pcm::IO;
+use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::errors::Error;
-use symphonia::core::io::MediaSourceStream;
 use symphonia::core::formats::FormatOptions;
+use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia_core::audio::{AudioBufferRef, Signal};
@@ -18,7 +18,7 @@ fn main() {
     // Create the media source stream.
     let mss = MediaSourceStream::new(Box::new(src), Default::default());
 
-     let mut hint = Hint::new();
+    let mut hint = Hint::new();
     hint.with_extension("ogg");
 
     // Use the default options for metadata and format readers.
@@ -26,8 +26,9 @@ fn main() {
     let fmt_opts: FormatOptions = Default::default();
 
     // Probe the media source.
-    let probed = symphonia::default::get_probe().format(&hint, mss, &fmt_opts, &meta_opts)
-                                                .expect("unsupported format");
+    let probed = symphonia::default::get_probe()
+        .format(&hint, mss, &fmt_opts, &meta_opts)
+        .expect("unsupported format");
 
     // Get the instantiated format reader.
     let mut format = probed.format;
@@ -55,7 +56,7 @@ fn main() {
     // Open default playback device
     let pcm = PCM::new("default", Direction::Playback, false).unwrap();
 
-    // Set hardware parameters: 44100 Hz / Mono / 16 bit
+    // Set hardware parameters: 16000 Hz / Mono / 16 bit
     let hwp = HwParams::any(&pcm).unwrap();
     hwp.set_channels(1).unwrap();
     hwp.set_rate(16000, ValueOr::Nearest).unwrap();
@@ -79,30 +80,11 @@ fn main() {
             break;
         }
         let packet = format.next_packet().unwrap();
-        /*
-        let packet = match format.next_packet() {
-            Ok(packet) => packet,
-            Err(Error::ResetRequired) => {
-                // The track list has been changed. Re-examine it and create a new set of decoders,
-                // then restart the decode loop. This is an advanced feature and it is not
-                // unreasonable to consider this "the end." As of v0.5.0, the only usage of this is
-                // for chained OGG physical streams.
-                unimplemented!();
-            }
-            Err(Error::IoError) => {
-            }
-            Err(err) => {
-                // A unrecoverable error occurred, halt decoding.
-                panic!("{:?}", err);
-            }
-        };
-        */
 
         // Consume any new metadata that has been read since the last packet.
         while !format.metadata().is_latest() {
             // Pop the old head of the metadata queue.
             format.metadata().pop();
-
             // Consume the new metadata at the head of the metadata queue.
         }
 
@@ -115,16 +97,16 @@ fn main() {
         match decoder.decode(&packet) {
             Ok(_decoded) => {
                 // Consume the decoded audio samples (see below).
-            match _decoded {
-                AudioBufferRef::F32(buf) => {
-                    let chan = buf.chan(0);
-                    play_pcm_reader(&io, chan);
-                },
-                _ => {
-                    // Repeat for the different sample formats.
-                    unimplemented!()
+                match _decoded {
+                    AudioBufferRef::F32(buf) => {
+                        let chan = buf.chan(0);
+                        play_pcm_reader(&io, chan);
+                    }
+                    _ => {
+                        // Repeat for the different sample formats.
+                        unimplemented!()
+                    }
                 }
-            }
             }
             Err(Error::IoError(_)) => {
                 // The packet failed to decode due to an IO error, skip the packet.
@@ -144,33 +126,19 @@ fn main() {
     pcm.drain().unwrap();
 }
 
-/*
-fn open_pcm_player() -> PCM {
-    // Open default playback device
-    let pcm = PCM::new("default", Direction::Playback, false).unwrap();
-
-    // Set hardware parameters: 44100 Hz / Mono / 16 bit
-    let hwp = HwParams::any(&pcm).unwrap();
-    hwp.set_channels(1).unwrap();
-    hwp.set_rate(16000, ValueOr::Nearest).unwrap();
-    hwp.set_format(Format::s16()).unwrap();
-    hwp.set_access(Access::RWInterleaved).unwrap();
-    pcm.hw_params(&hwp).unwrap();
-
-    // Make sure we don't start the stream too early
-    let hwp = pcm.hw_params_current().unwrap();
-    let swp = pcm.sw_params_current().unwrap();
-    swp.set_start_threshold(hwp.get_buffer_size().unwrap())
-        .unwrap();
-    pcm.sw_params(&swp).unwrap();
-    pcm
-}
-*/
-//fn play_pcm_reader(pcm: &PCM, reader: &[i16]) {
 fn play_pcm_reader(io: &IO<'_, i16>, reader: &[f32]) {
     //let io = pcm.io_f32().unwrap();
 
     // Make a sine wave
-    let converted: Vec<i16> = reader.iter().map(|&f| (f * 32767.0) as i16).collect();
+    let mut converted: Vec<i16> = Vec::new();
+    for sample in reader {
+        let isample: i32 = (sample * 65535.0) as i32;
+        converted.push(isample as i16);
+        converted.push(isample as i16);
+        //
+        //converted.push(((isample & 0x7fff0000) >> 16) as i16);
+        //converted.push((isample & 0xffff) as i16);
+        //converted.push((isample & 0xffff) as i16);
+    }
     io.writei(&converted).unwrap();
 }
