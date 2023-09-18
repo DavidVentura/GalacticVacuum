@@ -7,16 +7,11 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia_core::audio::{AudioBufferRef, Signal};
 
-use alsa::pcm::{Access, Format, HwParams, State, PCM};
+use alsa::pcm::{Access, Format, HwParams, PCM};
 use alsa::{Direction, ValueOr};
 
-fn main() {
-    //let mut reader = hound::WavReader::open("./valkyries.wav").unwrap();
-    // Open the media source.
-    let src = std::fs::File::open("./valkyries.ogg").expect("failed to open media");
-
+fn process_packets(mss: MediaSourceStream, io: &IO<'_, i16>) {
     // Create the media source stream.
-    let mss = MediaSourceStream::new(Box::new(src), Default::default());
 
     let mut hint = Hint::new();
     hint.with_extension("ogg");
@@ -50,28 +45,6 @@ fn main() {
 
     // Store the track identifier, it will be used to filter packets.
     let track_id = track.id;
-
-    // The decode loop.
-    ///////////////////////
-    // Open default playback device
-    let pcm = PCM::new("default", Direction::Playback, false).unwrap();
-
-    // Set hardware parameters: 16000 Hz / Mono / 16 bit
-    let hwp = HwParams::any(&pcm).unwrap();
-    hwp.set_channels(1).unwrap();
-    hwp.set_rate(16000, ValueOr::Nearest).unwrap();
-    hwp.set_format(Format::s16()).unwrap();
-    hwp.set_access(Access::RWInterleaved).unwrap();
-    pcm.hw_params(&hwp).unwrap();
-    let io = pcm.io_i16().unwrap();
-
-    // Make sure we don't start the stream too early
-    let hwp = pcm.hw_params_current().unwrap();
-    let swp = pcm.sw_params_current().unwrap();
-    swp.set_start_threshold(hwp.get_buffer_size().unwrap())
-        .unwrap();
-    pcm.sw_params(&swp).unwrap();
-    /////////////////////////////
     loop {
         // Get the next packet from the media format.
         let res = format.next_packet();
@@ -122,17 +95,48 @@ fn main() {
             }
         }
     }
-    println!("Draining now!");
+}
+
+fn open_audio_device() -> PCM {
+    // Open default playback device
+    let pcm = PCM::new("default", Direction::Playback, false).unwrap();
+
+    // Set hardware parameters: 16000 Hz / Mono / 16 bit
+    {
+        let hwp = HwParams::any(&pcm).unwrap();
+        hwp.set_channels(1).unwrap();
+        hwp.set_rate(16000, ValueOr::Nearest).unwrap();
+        hwp.set_format(Format::s16()).unwrap();
+        hwp.set_access(Access::RWInterleaved).unwrap();
+        pcm.hw_params(&hwp).unwrap();
+    }
+
+    {
+        let hwp = pcm.hw_params_current().unwrap();
+        let swp = pcm.sw_params_current().unwrap();
+        swp.set_start_threshold(hwp.get_buffer_size().unwrap())
+            .unwrap();
+        pcm.sw_params(&swp).unwrap();
+    }
+    pcm
+}
+fn main() {
+    let src = std::fs::File::open("./valkyries.ogg").expect("failed to open media");
+    let mss = MediaSourceStream::new(Box::new(src), Default::default());
+
+    let pcm = open_audio_device();
+    let io = pcm.io_i16().unwrap();
+    process_packets(mss, &io);
     pcm.drain().unwrap();
 }
 
 fn play_pcm_reader(io: &IO<'_, i16>, reader: &[f32]) {
     //let io = pcm.io_f32().unwrap();
 
-    // Make a sine wave
     let mut converted: Vec<i16> = Vec::new();
     for sample in reader {
         let isample: i32 = (sample * 65535.0) as i32;
+        // this is incorrect, but not sure what's a good way of converting F32->S16
         converted.push(isample as i16);
         converted.push(isample as i16);
         //
